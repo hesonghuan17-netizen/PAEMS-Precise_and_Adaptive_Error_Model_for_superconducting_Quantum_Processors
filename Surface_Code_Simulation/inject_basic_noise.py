@@ -119,6 +119,91 @@ def add_two_gate_noise(circuit, cx_gate_id, params):
     circuit.append("DEPOLARIZE2", [control, target], noise['p2'])
 
 
+# =============================================================================
+# Crosstalk noise injection (added 2026-04-29)
+# =============================================================================
+# Model: when qubit `active_q` fires a gate (H or CX), every other qubit
+# `spec_q` experiences a depolarizing event with probability χ(active, spec).
+# χ is per-gate per-pair. Stim handles Pauli propagation through subsequent
+# CX gates automatically; the resulting hyperedges are absorbed into the DEM.
+#
+# Specification in params JSON:
+#   "crosstalk_global": { "default_strength": 1e-5 }
+#   "crosstalk_pairs":  { "5-12": {"strength": 1e-4, "type": "physical_proximity"},
+#                         "23-89": {"strength": 8e-5, "type": "freq_collision"} }
+# `crosstalk_pairs` is optional. Strength can be a bare float instead of a dict.
+
+
+def build_crosstalk_lookup(chi_pairs):
+    """Precompute lookup: for each active qubit, list of (spectator, chi).
+
+    Both directions of each pair are recorded so iteration is symmetric.
+    Bare-float strength values are accepted (auto-wrapped).
+    Returns: dict[int, list[tuple[int, float]]]
+    """
+    lookup = {}
+    for key, spec in (chi_pairs or {}).items():
+        try:
+            i, j = (int(x) for x in key.split('-'))
+        except ValueError:
+            continue
+        if isinstance(spec, dict):
+            chi = float(spec.get('strength', 0.0))
+        else:
+            chi = float(spec)
+        if chi <= 0:
+            continue
+        lookup.setdefault(i, []).append((j, chi))
+        lookup.setdefault(j, []).append((i, chi))
+    return lookup
+
+
+def add_spectator_crosstalk(circuit, active_q, pair_lookup):
+    """Append DEPOLARIZE1 spectator events for qubits paired with active_q.
+
+    Only qubits explicitly listed in crosstalk_pairs receive an event;
+    qubits NOT in any pair entry experience no crosstalk (no global default).
+    Same-chi spectators are grouped into one DEPOLARIZE1 (Stim auto-merges).
+    """
+    entries = pair_lookup.get(active_q)
+    if not entries:
+        return
+    by_chi = {}
+    for spec_q, chi in entries:
+        by_chi.setdefault(chi, []).append(spec_q)
+    for chi, qs in by_chi.items():
+        if len(qs) == 1:
+            circuit.append("DEPOLARIZE1", qs[0], chi)
+        else:
+            circuit.append("DEPOLARIZE1", qs, chi)
+
+
+def validate_crosstalk_pairs_basic(chi_pairs, cx_gates_list):
+    """Basic semantic check on crosstalk_pairs entries.
+
+    Currently warns when an override pair is also a direct CX-coupled pair
+    (because gate noise already covers strong coupling there).
+    Returns list of warning strings (empty if all clean).
+    """
+    cx_set = set()
+    for _gid, (c, t) in cx_gates_list:
+        cx_set.add((c, t))
+        cx_set.add((t, c))
+    warnings = []
+    for key in chi_pairs:
+        try:
+            i, j = (int(x) for x in key.split('-'))
+        except ValueError:
+            warnings.append(f"[CROSSTALK WARN] crosstalk_pairs key '{key}' is malformed (expect 'i-j')")
+            continue
+        if (i, j) in cx_set:
+            warnings.append(
+                f"[CROSSTALK WARN] crosstalk_pairs '{key}': directly connected by CX, "
+                "spectator crosstalk overlaps with CX gate noise (consider removing)"
+            )
+    return warnings
+
+
 def inject_surface_code_noise(base_circuit, data_qubits, x_stabilizers, z_stabilizers,
                               cx_gates, params_file):
     """
@@ -142,6 +227,15 @@ def inject_surface_code_noise(base_circuit, data_qubits, x_stabilizers, z_stabil
     cx_gate_lookup = {}
     for gate_id, (control, target) in cx_gates:
         cx_gate_lookup[(control, target)] = str(gate_id)
+
+    # ----- Crosstalk setup (only via crosstalk_pairs; no global default) -----
+    chi_pairs = params.get('crosstalk_pairs', {}) or {}
+    pair_lookup = build_crosstalk_lookup(chi_pairs)
+    crosstalk_enabled = bool(pair_lookup)
+    if crosstalk_enabled:
+        warns = validate_crosstalk_pairs_basic(chi_pairs, cx_gates)
+        for w in warns:
+            print(w)
 
     noisy_circuit = stim.Circuit()
 
@@ -167,6 +261,9 @@ def inject_surface_code_noise(base_circuit, data_qubits, x_stabilizers, z_stabil
             for target in targets:
                 noisy_circuit.append("H", target)
                 add_single_gate_noise(noisy_circuit, target, params)
+                # NEW: spectator crosstalk from H driven on `target`
+                if crosstalk_enabled:
+                    add_spectator_crosstalk(noisy_circuit, target, pair_lookup)
 
         elif instruction.name == "CX":
             targets = [t.value for t in instruction.targets_copy()]
@@ -182,6 +279,11 @@ def inject_surface_code_noise(base_circuit, data_qubits, x_stabilizers, z_stabil
                 if gate_key in cx_gate_lookup:
                     cx_gate_id = cx_gate_lookup[gate_key]
                     add_two_gate_noise(noisy_circuit, cx_gate_id, params)
+
+                # NEW: spectator crosstalk from BOTH control and target drives
+                if crosstalk_enabled:
+                    add_spectator_crosstalk(noisy_circuit, control, pair_lookup)
+                    add_spectator_crosstalk(noisy_circuit, target, pair_lookup)
 
         elif instruction.name == "MR":
             # MR前：数据比特空闲噪声（仅中间轮） + 稳定子SPAM噪声

@@ -230,21 +230,16 @@ def calculate_affected_states_vectorized(all_leakage_states: np.ndarray, preproc
             continue
 
         # 规则1：时间范围内的泄漏 (向量化OR操作)
+        # 一个 qubit 在本轮内任何时刻进入过 |2⟩ -> 本轮所有 measurement 都标记 affected
         affected = np.any(all_leakage_states[:, round_start:round_end + 1, :], axis=1).astype(
             np.uint8)  # (shots, qubits)
 
-        # 规则2：CX门影响传播
-        for t in range(round_start + 1, min(round_end + 1, len(operations))):
-            operation = operations[t]
-            if operation['type'] == 'CX':
-                prev_states = all_leakage_states[:, t, :]  # (shots, qubits)
-                cx_indices = operation['cx_indices']
-
-                for c_idx, t_idx in cx_indices:
-                    # 如果control泄漏，target受影响
-                    affected[:, t_idx] = np.maximum(affected[:, t_idx], prev_states[:, c_idx])
-                    # 如果target泄漏，control受影响
-                    affected[:, c_idx] = np.maximum(affected[:, c_idx], prev_states[:, t_idx])
+        # 规则2 已删除 (2026-04-29):
+        #   原本会把 "CX 时一边泄漏 -> 另一边的 measurement 也打 affected" 标记进去。
+        #   但 simulate_all_shots_vectorized 里的 lp_propagation_prob 已经在物理层
+        #   决定了 partner 是否真正进入 |2⟩；如果真传过去，partner 自己的泄漏被规则 1
+        #   自动覆盖；如果没传过去，强行把 partner 标 affected 是双重计数，会让
+        #   hop>=2 cross-qubit 关联整体偏高 ~2-3x（验证 d=5 r=30 50K shots）。
 
         affected_results.append(affected.astype(np.uint8))
 
