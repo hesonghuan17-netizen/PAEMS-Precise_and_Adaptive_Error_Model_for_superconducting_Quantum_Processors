@@ -1,0 +1,15 @@
+{
+  "mean_gap_mhz": 5,
+  "std_gap_mhz": 3,
+  "max_total_spread_mhz": 1000,
+  "A_peak": 0.0025,
+  "W_mhz": 10,
+  "zz_floor": 0.008,
+  "spatial_factors": {
+    "2": 1.0,
+    "3": 0.3,
+    "4": 0.1,
+    "5": 0.03
+  },
+  "_label": "L4 worst (Eagle r3 / Wukong-180 / Sycamore-era)"
+}

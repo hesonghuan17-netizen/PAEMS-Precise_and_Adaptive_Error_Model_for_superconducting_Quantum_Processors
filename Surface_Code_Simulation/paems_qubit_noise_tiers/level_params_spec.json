@@ -1,0 +1,136 @@
+{
+  "_metadata": {
+    "name": "PAEMS qubit noise tier specification",
+    "version": "1.0",
+    "created": "2026-04-27",
+    "description": "4-tier noise parameter specification for synthetic PAEMS surface-code simulation. Each tier represents an industry quality level. Per-qubit/per-CX values are sampled from normal distributions with the (mean, std) given here.",
+    "tiers": {
+      "L1": "Next-generation (5-7 years out, 2-3x better than L2)",
+      "L2": "Current state-of-art (Heron r3 / Willow / Zuchongzhi 3.x, 2024-2025)",
+      "L3": "Current mainstream (Heron r2 / Heron r1 / Zuchongzhi 3.0)",
+      "L4": "Current poor or older generation (Eagle r3 / Origin Wukong-180 / Sycamore-era)"
+    },
+    "data_sources": [
+      "IBM 10-chip CSV calibrations (boston/pittsburgh/aachen/kingston/marrakesh/fez/berlin/miami/brussels/strasbourg)",
+      "Google Willow Nature 2024 spec sheet",
+      "USTC Zuchongzhi 3.0 / 3.2 papers (2024-2025)",
+      "Origin Quantum Wukong-180 chip data (2026)"
+    ],
+    "constraints": {
+      "physical": "All time params > 0; all probability params in [0, 1]; all fidelities in [0.5, 1]; T2 <= 2*T1",
+      "approx": "measurement_spam_rate.mean ~ data_init_error.mean + data_measurement_error.mean (loose, per-qubit may deviate)",
+      "leakage_disabled": "lp / sp / lp_propagation_prob set to 0 in this version (classical noise only)",
+      "crosstalk_v2": "Removed crosstalk_global. Crosstalk now ONLY through crosstalk_pairs (freq + distance based). Pairs without entry experience zero crosstalk. Use gen_pair_overrides.py to populate, or write crosstalk_pairs manually."
+    },
+    "sampling": {
+      "distribution": "normal by default; LogNormal when spec entry has 'log_std' field (right-skewed error rates)",
+      "lognormal_form": "val = mean * exp(N(-log_std**2/2, log_std)) -- mean-preserving, median ~ mean*exp(-log_std**2/2)",
+      "lognormal_applies_to": "cx_fid_err, sqg_fid_err, data_init_error, data_measurement_error, measurement_spam_rate (right-skewed by physics; bad-qubit / bad-CX outliers)",
+      "normal_applies_to": "t1, t2, *_length (relatively symmetric distributions)",
+      "seed": "user-provided; same seed -> identical output",
+      "fid_handling": "sample on error rate (1-fid), then convert back to fid; ensures fid <= 1",
+      "physical_floor": "all params clipped to [physical_min, physical_max]"
+    }
+  },
+
+  "_defect_overlay_doc": {
+    "what": "Heterogeneous hot-spot model. Pick `qubit_fraction` × N_q qubits and `cx_fraction` × N_cx CX gates as defective. For each defective point, sample a subset of its candidate params and per-param multipliers ~ Uniform[mult_min, mult_max]. Everything driven by --defect-seed.",
+    "physics": "Models real-chip post-calibration outliers — each defective qubit/CX has its own dominant defect type (some have bad readout, others bad CX, others high leakage), with various severity. NOT every param of a hot point degrades.",
+    "canonical_param_order": {
+      "hot_qubit": ["sqg_fid_err", "data_init_error", "data_measurement_error", "measurement_spam_rate", "lp"],
+      "hot_cx":    ["cx_fid_err", "lp_propagation_prob"]
+    },
+    "consistency": "gen_level_params.py + gen_leakage_overrides.py must use same defect_seed AND iterate canonical param order so per-(point,param) multiplier matches across scripts."
+  },
+  "L1": {
+    "label": "Next-generation (2030s aspirational)",
+    "defect_overlay": {"qubit_fraction": 0.04, "cx_fraction": 0.03, "params_per_qubit": [1, 3], "params_per_cx": [1, 2], "mult_min": 2.0, "mult_max": 6.0},
+    "qubit": {
+      "t1":                     {"mean": 600.0e-6, "std": 150.0e-6, "min": 1.0e-6, "max": null,    "unit": "s"},
+      "t2":                     {"mean": 500.0e-6, "std": 120.0e-6, "min": 1.0e-6, "max_rule": "2*t1", "unit": "s"},
+      "sqg_fid_err":            {"mean": 7.0e-5,   "log_std": 0.4,  "min": 0.0,    "max": 0.5,     "unit": "prob"},
+      "sqg_length":             {"mean": 25.0e-9,  "std": 0.3e-9,   "min": 1.0e-9, "max": 1.0e-6,  "unit": "s"},
+      "rd_length":              {"mean": 800.0e-9, "std": 80.0e-9,  "min": 1.0e-9, "max": 1.0e-5,  "unit": "s"},
+      "data_init_error":        {"mean": 5.0e-4,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "data_measurement_error": {"mean": 1.0e-3,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "measurement_spam_rate":  {"mean": 1.5e-3,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "lp":                     {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true},
+      "sp":                     {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true}
+    },
+    "cx": {
+      "cx_fid_err":             {"mean": 1.0e-3,   "log_std": 0.5,  "min": 0.0,    "max": 0.5,     "unit": "prob"},
+      "cx_length":              {"mean": 30.0e-9,  "std": 2.0e-9,   "min": 1.0e-9, "max": 1.0e-5,  "unit": "s"},
+      "lp_propagation_prob":    {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true}
+    },
+    "_frequency_note": "Frequency assignment moved to gen_pair_overrides.py (decoupled from L1-L4). Use --freq-* CLI args."
+  },
+
+  "L2": {
+    "label": "Current SOTA (Heron r3 / Willow / Zuchongzhi 3.x)",
+    "defect_overlay": {"qubit_fraction": 0.07, "cx_fraction": 0.05, "params_per_qubit": [1, 3], "params_per_cx": [1, 2], "mult_min": 3.0, "mult_max": 8.0},
+    "qubit": {
+      "t1":                     {"mean": 270.0e-6, "std": 70.0e-6,  "min": 1.0e-6, "max": null,    "unit": "s"},
+      "t2":                     {"mean": 200.0e-6, "std": 60.0e-6,  "min": 1.0e-6, "max_rule": "2*t1", "unit": "s"},
+      "sqg_fid_err":            {"mean": 2.0e-4,   "log_std": 0.4,  "min": 0.0,    "max": 0.5,     "unit": "prob"},
+      "sqg_length":             {"mean": 30.0e-9,  "std": 1.0e-9,   "min": 1.0e-9, "max": 1.0e-6,  "unit": "s"},
+      "rd_length":              {"mean": 1500.0e-9,"std": 200.0e-9, "min": 1.0e-9, "max": 1.0e-5,  "unit": "s"},
+      "data_init_error":        {"mean": 1.5e-3,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "data_measurement_error": {"mean": 3.0e-3,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "measurement_spam_rate":  {"mean": 4.0e-3,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "lp":                     {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true},
+      "sp":                     {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true}
+    },
+    "cx": {
+      "cx_fid_err":             {"mean": 3.0e-3,   "log_std": 0.5,  "min": 0.0,    "max": 0.5,     "unit": "prob"},
+      "cx_length":              {"mean": 50.0e-9,  "std": 10.0e-9,  "min": 1.0e-9, "max": 1.0e-5,  "unit": "s"},
+      "lp_propagation_prob":    {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true}
+    },
+    "_frequency_note": "decoupled — see gen_pair_overrides.py CLI"
+  },
+
+  "L3": {
+    "label": "Current mainstream (Heron r2/r1 / Zuchongzhi 3.0)",
+    "defect_overlay": {"qubit_fraction": 0.09, "cx_fraction": 0.07, "params_per_qubit": [1, 3], "params_per_cx": [1, 2], "mult_min": 5.0, "mult_max": 12.0},
+    "qubit": {
+      "t1":                     {"mean": 100.0e-6, "std": 30.0e-6,  "min": 1.0e-6, "max": null,    "unit": "s"},
+      "t2":                     {"mean": 70.0e-6,  "std": 25.0e-6,  "min": 1.0e-6, "max_rule": "2*t1", "unit": "s"},
+      "sqg_fid_err":            {"mean": 1.0e-3,   "log_std": 0.4,  "min": 0.0,    "max": 0.5,     "unit": "prob"},
+      "sqg_length":             {"mean": 35.0e-9,  "std": 2.0e-9,   "min": 1.0e-9, "max": 1.0e-6,  "unit": "s"},
+      "rd_length":              {"mean": 2500.0e-9,"std": 300.0e-9, "min": 1.0e-9, "max": 1.0e-5,  "unit": "s"},
+      "data_init_error":        {"mean": 1.0e-2,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "data_measurement_error": {"mean": 2.0e-2,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "measurement_spam_rate":  {"mean": 3.0e-2,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "lp":                     {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true},
+      "sp":                     {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true}
+    },
+    "cx": {
+      "cx_fid_err":             {"mean": 1.0e-2,   "log_std": 0.5,  "min": 0.0,    "max": 0.5,     "unit": "prob"},
+      "cx_length":              {"mean": 200.0e-9, "std": 20.0e-9,  "min": 1.0e-9, "max": 1.0e-5,  "unit": "s"},
+      "lp_propagation_prob":    {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true}
+    },
+    "_frequency_note": "decoupled — see gen_pair_overrides.py CLI"
+  },
+
+  "L4": {
+    "label": "Current poor or older (Eagle r3 / Wukong-180 / Sycamore-era)",
+    "defect_overlay": {"qubit_fraction": 0.12, "cx_fraction": 0.10, "params_per_qubit": [1, 3], "params_per_cx": [1, 2], "mult_min": 7.0, "mult_max": 16.0},
+    "qubit": {
+      "t1":                     {"mean": 30.0e-6,  "std": 10.0e-6,  "min": 1.0e-6, "max": null,    "unit": "s"},
+      "t2":                     {"mean": 20.0e-6,  "std": 8.0e-6,   "min": 1.0e-6, "max_rule": "2*t1", "unit": "s"},
+      "sqg_fid_err":            {"mean": 2.0e-3,   "log_std": 0.4,  "min": 0.0,    "max": 0.5,     "unit": "prob"},
+      "sqg_length":             {"mean": 60.0e-9,  "std": 3.0e-9,   "min": 1.0e-9, "max": 1.0e-6,  "unit": "s"},
+      "rd_length":              {"mean": 3000.0e-9,"std": 500.0e-9, "min": 1.0e-9, "max": 1.0e-5,  "unit": "s"},
+      "data_init_error":        {"mean": 3.0e-2,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "data_measurement_error": {"mean": 6.0e-2,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "measurement_spam_rate":  {"mean": 9.0e-2,   "log_std": 0.5,  "min": 0.0,    "max": 1.0,     "unit": "prob"},
+      "lp":                     {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true},
+      "sp":                     {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true}
+    },
+    "cx": {
+      "cx_fid_err":             {"mean": 2.0e-2,   "log_std": 0.5,  "min": 0.0,    "max": 0.5,     "unit": "prob"},
+      "cx_length":              {"mean": 400.0e-9, "std": 50.0e-9,  "min": 1.0e-9, "max": 1.0e-5,  "unit": "s"},
+      "lp_propagation_prob":    {"mean": 0.0,      "std": 0.0,      "min": 0.0,    "max": 1.0,     "unit": "prob", "_disabled": true}
+    },
+    "_frequency_note": "decoupled — see gen_pair_overrides.py CLI"
+  }
+}
