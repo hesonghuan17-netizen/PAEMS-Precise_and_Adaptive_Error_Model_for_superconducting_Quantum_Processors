@@ -3,10 +3,10 @@
 PAEMS L1+L2+L4 (no L3 leakage) calibration against Google real-chip syndrome.
 
 L3 (leakage post-processing) is intentionally excluded because it cannot live
-inside a stim Circuit / DEM, so any NLDU dataset built from a stim sampler
-inherits only L1+L2+L4. We need to fit L1+L2+L4 alone to the Google chip
-defect-rate / per-detector distribution / Spitz pij correlation, so the
-syndrome distribution the NLDU sees in training matches the chip.
+inside a stim Circuit / DEM, so any sampler driven from PAEMS-injected stim
+circuits inherits only L1+L2+L4. We need to fit L1+L2+L4 alone to the Google
+chip defect-rate / per-detector distribution / Spitz pij correlation so that
+the syndrome distribution from PAEMS sampling matches the real chip.
 
 Usage:
     python calibrate_l1l2l4_vs_google.py \

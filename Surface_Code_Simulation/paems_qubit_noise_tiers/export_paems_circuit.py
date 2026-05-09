@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Export a PAEMS-noisy stim Circuit to a .stim file so that it can be fed
-into the NLDU dataset generator (gen_dataset_stream.py --circuit-file).
+Export a PAEMS-noisy stim Circuit to a standalone .stim file so that any
+downstream sampler / decoder can consume it without re-running PAEMS noise
+injection (e.g. for distributed sampling, archival, cross-tool comparison).
 
 Usage:
     python export_paems_circuit.py \
