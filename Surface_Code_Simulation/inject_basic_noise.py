@@ -265,22 +265,35 @@ def inject_surface_code_noise(base_circuit, data_qubits, x_stabilizers, z_stabil
                 if crosstalk_enabled:
                     add_spectator_crosstalk(noisy_circuit, target, pair_lookup)
 
-        elif instruction.name == "CX":
-            targets = [t.value for t in instruction.targets_copy()]
+        elif instruction.name in ("CX", "CZ"):
+            # XZZX surface code uses CZ for stabilizer entangling, CSS uses CX.
+            # Both are 2-qubit gates with similar superconducting fidelity/length;
+            # PAEMS uses one set of `cx_gates` params keyed by (control, target) pair
+            # — the gate type (CX vs CZ) is irrelevant for noise injection here.
+            # NOTE: real-chip templates can have classical-control CX (e.g.
+            # `CX sweep[k] q` for per-shot Pauli-frame randomization) — those are
+            # NOT real entangling gates and must pass through without noise.
+            ts = instruction.targets_copy()
+            gate_name = instruction.name
 
-            # CX门是成对的
-            for j in range(0, len(targets), 2):
-                control, target = targets[j], targets[j + 1]
+            for j in range(0, len(ts), 2):
+                t_ctrl, t_tgt = ts[j], ts[j + 1]
 
-                noisy_circuit.append("CX", [control, target])
+                # Pass through with original target objects (preserves sweep_bit
+                # / measurement_record semantics) — no noise on classical-control.
+                if not (t_ctrl.is_qubit_target and t_tgt.is_qubit_target):
+                    noisy_circuit.append(gate_name, [t_ctrl, t_tgt])
+                    continue
 
-                # 查找对应的CX门参数
+                control, target = t_ctrl.value, t_tgt.value
+                noisy_circuit.append(gate_name, [control, target])
+
                 gate_key = (control, target)
                 if gate_key in cx_gate_lookup:
                     cx_gate_id = cx_gate_lookup[gate_key]
                     add_two_gate_noise(noisy_circuit, cx_gate_id, params)
 
-                # NEW: spectator crosstalk from BOTH control and target drives
+                # spectator crosstalk from BOTH control and target drives
                 if crosstalk_enabled:
                     add_spectator_crosstalk(noisy_circuit, control, pair_lookup)
                     add_spectator_crosstalk(noisy_circuit, target, pair_lookup)

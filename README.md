@@ -80,6 +80,26 @@ correlations, and spacetime correlations. This analysis is essential for validat
    For more details about the required dependencies, refer to the [requirements.txt](requirements.txt) file.
 
 
+## Surface Code Variants
+
+`Surface_Code_Simulation/surface_code_generate_circuits.py` exposes a single
+entry point that builds a noiseless circuit + structural metadata for three
+families of codes that PAEMS noise injection can target:
+
+| Variant | API | Use case |
+|---|---|---|
+| **Standard rotated CSS** (XXXX / ZZZZ stabilizers) | `code_variant='css'` (default) | Default QEC research, matches stim's built-in surface code |
+| **XZZX (any size)** — pure Python, any `(d, r)` | `code_variant='xzzx'` | Distance-scaling experiments, biased-noise tailoring, Willow-style memory tests |
+| **XZZX from chip template** | `code_variant='xzzx', xzzx_template=path` | Matching real-chip qubit numbering (e.g. Google `circuit_ideal.stim`) |
+| **Custom `.stim` circuit** | `code_variant='xzzx', xzzx_template=any_circuit.stim` | Heavy-hex, color codes, or any noiseless `.stim` file |
+
+All variants return the same 5-tuple, so PAEMS noise injection is oblivious
+to the underlying code. See
+[`Surface_Code_Simulation/SURFACE_CODES.md`](Surface_Code_Simulation/SURFACE_CODES.md)
+for full API documentation, usage examples, the algorithm credit (XZZX
+implementation derived from Bonilla Ataides et al., Nature Comms 12, 2172,
+2021), and an end-to-end pipeline example.
+
 ## Start
 
 ### Quantum Noise Simulation

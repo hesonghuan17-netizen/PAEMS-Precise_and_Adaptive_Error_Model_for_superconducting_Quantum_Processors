@@ -185,6 +185,11 @@ def generate_pairs(qubits, cx_gates, cfg):
             if hop == 1:
                 n_skipped += 1
                 continue
+            if hop == float('inf'):
+                # Disconnected pair (e.g. XZZX boundary aux qubits not in
+                # any 2-qubit gate) — no crosstalk path, skip
+                n_skipped += 1
+                continue
 
             diff = abs(fi - fj) if (fi is not None and fj is not None) else None
             chi = chi_unified(diff, hop, cfg)

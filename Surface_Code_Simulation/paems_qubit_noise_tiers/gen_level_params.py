@@ -17,6 +17,13 @@ import os
 import sys
 import numpy as np
 
+# Make parent Surface_Code_Simulation/ importable so we can use the canonical
+# PAEMS topology extractor (surface_code_generate_circuits.generate_*) instead
+# of the Stim-only fallback. Required for XZZX support.
+_PARENT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PARENT_DIR not in sys.path:
+    sys.path.insert(0, _PARENT_DIR)
+
 
 def load_spec(spec_path):
     with open(spec_path, encoding='utf-8') as f:
@@ -276,12 +283,16 @@ def sample_cx(rng, spec_cx, cx_pairs, hot_cx_mults=None):
     return out
 
 
-def get_topology_from_paems(distance, rounds, basis):
-    """优先用 PAEMS 已有函数生成拓扑（含 1-based qubit 编号）。"""
+def get_topology_from_paems(distance, rounds, basis,
+                             code_variant='css', xzzx_template=None):
+    """优先用 PAEMS 已有函数生成拓扑（含 1-based qubit 编号）。
+    code_variant='xzzx' 时从外部 noiseless .stim 模板加载（如 Google
+    circuit_ideal.stim），需提供 xzzx_template 路径。"""
     try:
         from surface_code_generate_circuits import generate_surface_code_circuit
         _, data_q, x_stab, z_stab, cx_gates = generate_surface_code_circuit(
-            distance, rounds, basis
+            distance, rounds, basis,
+            code_variant=code_variant, xzzx_template=xzzx_template,
         )
         all_q = sorted(set(data_q + x_stab + z_stab))
         cx_pairs = [(c, t) for _, (c, t) in cx_gates]
@@ -378,6 +389,11 @@ def main():
     ap.add_argument('--spec', default=None,
                     help='Path to level_params_spec.json (default: same dir as script)')
     ap.add_argument('--out', required=True, help='Output JSON path')
+    ap.add_argument('--code-variant', default='css', choices=['css', 'xzzx'],
+                    help='Surface code variant: css (standard rotated, default) or xzzx')
+    ap.add_argument('--xzzx-template', default=None,
+                    help='Path to noiseless XZZX .stim template (required for code_variant=xzzx, '
+                         'e.g. Google circuit_ideal.stim)')
     args = ap.parse_args()
 
     spec_path = args.spec or os.path.join(
@@ -389,8 +405,12 @@ def main():
     level_spec = spec[level_key]
 
     # 拓扑（优先 PAEMS，fallback 到 Stim）
-    topo = get_topology_from_paems(args.distance, args.rounds, args.basis)
+    topo = get_topology_from_paems(args.distance, args.rounds, args.basis,
+                                    code_variant=args.code_variant,
+                                    xzzx_template=args.xzzx_template)
     if topo is None:
+        if args.code_variant == 'xzzx':
+            raise SystemExit('XZZX requires PAEMS module + --xzzx-template; no fallback')
         topo = get_topology_fallback(args.distance, args.rounds, args.basis)
     all_q, cx_pairs, data_q, x_stab, z_stab = topo
 
